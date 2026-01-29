@@ -1,5 +1,11 @@
 import { type DragEvent, useEffect, useRef, useState } from "react";
-import { extractText, getHealth, summarizeDocument, uploadPdf } from "./services/api";
+import {
+  askQuestion,
+  extractText,
+  getHealth,
+  summarizeDocument,
+  uploadPdf,
+} from "./services/api";
 
 const features = [
   {
@@ -40,6 +46,12 @@ function App() {
   >("idle");
   const [summaryText, setSummaryText] = useState<string | null>(null);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [questionInput, setQuestionInput] = useState("");
+  const [askState, setAskState] = useState<"idle" | "asking" | "error">("idle");
+  const [askError, setAskError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<
+    Array<{ id: string; role: "user" | "assistant"; content: string; citations?: number[] }>
+  >([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -69,6 +81,10 @@ function App() {
     setSummaryState("idle");
     setSummaryText(null);
     setSummaryError(null);
+    setMessages([]);
+    setQuestionInput("");
+    setAskState("idle");
+    setAskError(null);
     try {
       const result = await uploadPdf(file);
       setUploadedFile({
@@ -107,6 +123,39 @@ function App() {
       setSummaryError(
         error instanceof Error ? error.message : "Summarization failed"
       );
+    }
+  };
+
+  const handleAsk = async () => {
+    if (!uploadedFile || !questionInput.trim()) {
+      return;
+    }
+
+    const question = questionInput.trim();
+    setQuestionInput("");
+    setAskState("asking");
+    setAskError(null);
+    const messageId = `${Date.now()}-${Math.random()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: messageId, role: "user", content: question },
+    ]);
+
+    try {
+      const result = await askQuestion(uploadedFile.id, question);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `${messageId}-answer`,
+          role: "assistant",
+          content: result.answer,
+          citations: result.citations,
+        },
+      ]);
+      setAskState("idle");
+    } catch (error) {
+      setAskState("error");
+      setAskError(error instanceof Error ? error.message : "Question failed");
     }
   };
 
@@ -265,6 +314,62 @@ function App() {
               Upload a PDF to enable summarization.
             </p>
           )}
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+          <h2 className="text-xl font-semibold text-white">Ask questions</h2>
+          <p className="mt-2 text-slate-300">
+            Ask anything about the uploaded PDF and receive answers with page citations.
+          </p>
+          <div className="mt-6 space-y-4">
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+              <div className="space-y-3">
+                {messages.length === 0 ? (
+                  <p className="text-sm text-slate-400">
+                    No questions yet. Upload a PDF and ask your first question.
+                  </p>
+                ) : (
+                  messages.map((message) => (
+                    <div key={message.id} className="space-y-2">
+                      <div
+                        className={`rounded-lg px-4 py-3 text-sm ${
+                          message.role === "user"
+                            ? "bg-indigo-500/20 text-indigo-100"
+                            : "bg-slate-800 text-slate-100"
+                        }`}
+                      >
+                        <p className="whitespace-pre-line">{message.content}</p>
+                        {message.citations && message.citations.length > 0 ? (
+                          <p className="mt-2 text-xs text-slate-300">
+                            Citations: {message.citations.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <input
+                value={questionInput}
+                onChange={(event) => setQuestionInput(event.target.value)}
+                placeholder="Ask about the document..."
+                className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-4 py-2 text-sm text-slate-100 outline-none focus:border-indigo-400"
+              />
+              <button
+                type="button"
+                onClick={handleAsk}
+                disabled={!uploadedFile || askState === "asking"}
+                className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+              >
+                {askState === "asking" ? "Asking..." : "Ask"}
+              </button>
+            </div>
+            {askState === "error" && askError ? (
+              <p className="text-sm text-rose-400">{askError}</p>
+            ) : null}
+          </div>
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">

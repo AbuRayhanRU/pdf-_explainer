@@ -85,4 +85,15 @@ export async function summarizeDocument(id: string): Promise<{
   );
 }
 
+export async function askQuestion(
+  id: string,
+  question: string
+): Promise<{ answer: string; citations: number[]; method: "pdf-parse" | "ocr" }> {
+  return postJson<{
+    answer: string;
+    citations: number[];
+    method: "pdf-parse" | "ocr";
+  }>("/ask", { id, question });
+}
+
 export type { ApiResponse };
