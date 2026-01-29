@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { getHealth } from "./services/api";
+import { type DragEvent, useEffect, useRef, useState } from "react";
+import { getHealth, uploadPdf } from "./services/api";
 
 const features = [
   {
@@ -18,6 +18,17 @@ const features = [
 
 function App() {
   const [apiStatus, setApiStatus] = useState("checking...");
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadState, setUploadState] = useState<
+    "idle" | "uploading" | "success" | "error"
+  >("idle");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<{
+    id: string;
+    originalName: string;
+    size: number;
+  } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -36,6 +47,39 @@ function App() {
       active = false;
     };
   }, []);
+
+  const handleFileUpload = async (file: File) => {
+    setUploadState("uploading");
+    setUploadError(null);
+    try {
+      const result = await uploadPdf(file);
+      setUploadedFile({
+        id: result.id,
+        originalName: result.originalName,
+        size: result.size,
+      });
+      setUploadState("success");
+    } catch (error) {
+      setUploadState("error");
+      setUploadError(
+        error instanceof Error ? error.message : "Upload failed"
+      );
+    }
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
+    const file = files[0];
+    handleFileUpload(file);
+  };
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+    handleFiles(event.dataTransfer.files);
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -75,6 +119,57 @@ function App() {
                 </p>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+          <h2 className="text-xl font-semibold text-white">Upload a PDF</h2>
+          <p className="mt-2 text-slate-300">
+            Drag and drop a PDF or browse your files to begin.
+          </p>
+          <div
+            className={`mt-6 flex min-h-[180px] flex-col items-center justify-center rounded-2xl border border-dashed p-6 text-center transition ${
+              isDragging
+                ? "border-indigo-400 bg-indigo-500/10"
+                : "border-slate-700 bg-slate-950"
+            }`}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragging(true);
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(event) => handleFiles(event.target.files)}
+            />
+            <p className="text-sm text-slate-300">
+              {uploadState === "uploading"
+                ? "Uploading..."
+                : "Drop your PDF here"}
+            </p>
+            <button
+              className="mt-4 rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-indigo-400 hover:text-white"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadState === "uploading"}
+            >
+              Browse files
+            </button>
+            {uploadState === "error" && uploadError ? (
+              <p className="mt-3 text-sm text-rose-400">{uploadError}</p>
+            ) : null}
+            {uploadState === "success" && uploadedFile ? (
+              <div className="mt-4 text-sm text-emerald-300">
+                Uploaded {uploadedFile.originalName} ({Math.round(uploadedFile.size / 1024)}
+                {" "}
+                KB)
+              </div>
+            ) : null}
           </div>
         </section>
 

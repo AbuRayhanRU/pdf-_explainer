@@ -10,6 +10,9 @@ pnpm-debug.log*
 # Env
 .env
 
+# Uploads
+uploads/
+
 # Build outputs
 /dist/
 /build/
