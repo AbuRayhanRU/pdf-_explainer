@@ -66,12 +66,108 @@ const extractPdfText = async (filePath: string) => {
   } as const;
 };
 
+const AI_PROVIDER = (process.env.AI_PROVIDER ?? "openai").toLowerCase();
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "llama3";
+
 const getOpenAIClient = () => {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
   }
   return new OpenAI({ apiKey });
+};
+
+const callOllamaChat = async (messages: Array<{ role: "system" | "user"; content: string }>) => {
+  const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      stream: false,
+      messages,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || `Ollama request failed with ${response.status}`);
+  }
+
+  const data = (await response.json()) as { message?: { content?: string } };
+  return data.message?.content?.trim() ?? "";
+};
+
+const generateSummary = async (promptText: string) => {
+  if (AI_PROVIDER === "ollama") {
+    return callOllamaChat([
+      {
+        role: "system",
+        content: "You are a helpful assistant that summarizes documents for busy professionals.",
+      },
+      {
+        role: "user",
+        content:
+          "Summarize the document in 5-8 bullet points. Focus on key facts, decisions, and action items.\n\n" +
+          promptText,
+      },
+    ]);
+  }
+
+  const client = getOpenAIClient();
+  const completion = await client.chat.completions.create({
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    temperature: 0.3,
+    messages: [
+      {
+        role: "system",
+        content: "You are a helpful assistant that summarizes documents for busy professionals.",
+      },
+      {
+        role: "user",
+        content:
+          "Summarize the document in 5-8 bullet points. Focus on key facts, decisions, and action items.\n\n" +
+          promptText,
+      },
+    ],
+  });
+
+  return completion.choices[0]?.message?.content?.trim() ?? "";
+};
+
+const answerQuestion = async (question: string, context: string) => {
+  if (AI_PROVIDER === "ollama") {
+    return callOllamaChat([
+      {
+        role: "system",
+        content:
+          "You answer questions about a PDF. Cite sources using [p.X] where X is the page number. If the answer is not in the document, say you cannot find it.",
+      },
+      {
+        role: "user",
+        content: `Question: ${question}\n\nDocument:\n${context}`,
+      },
+    ]);
+  }
+
+  const client = getOpenAIClient();
+  const completion = await client.chat.completions.create({
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    temperature: 0.2,
+    messages: [
+      {
+        role: "system",
+        content:
+          "You answer questions about a PDF. Cite sources using [p.X] where X is the page number. If the answer is not in the document, say you cannot find it.",
+      },
+      {
+        role: "user",
+        content: `Question: ${question}\n\nDocument:\n${context}`,
+      },
+    ],
+  });
+
+  return completion.choices[0]?.message?.content?.trim() ?? "";
 };
 
 app.use(
@@ -213,26 +309,7 @@ app.post("/summarize", authenticate, async (req: Request, res: Response, next: N
 
     const result = await extractPdfText(filePath);
     const promptText = result.text.slice(0, MAX_SUMMARY_CHARS);
-    const client = getOpenAIClient();
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.3,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a helpful assistant that summarizes documents for busy professionals.",
-        },
-        {
-          role: "user",
-          content:
-            "Summarize the document in 5-8 bullet points. Focus on key facts, decisions, and action items.\n\n" +
-            promptText,
-        },
-      ],
-    });
-
-    const summary = completion.choices[0]?.message?.content?.trim() ?? "";
+    const summary = await generateSummary(promptText);
     res.status(200).json({ summary, method: result.method });
   } catch (error) {
     next(error);
@@ -262,24 +339,7 @@ app.post("/ask", authenticate, async (req: Request, res: Response, next: NextFun
       .map((page) => `Page ${page.page}:\n${page.text}`)
       .join("\n\n");
 
-    const client = getOpenAIClient();
-    const completion = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-      temperature: 0.2,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You answer questions about a PDF. Cite sources using [p.X] where X is the page number. If the answer is not in the document, say you cannot find it.",
-        },
-        {
-          role: "user",
-          content: `Question: ${question}\n\nDocument:\n${context}`,
-        },
-      ],
-    });
-
-    const answer = completion.choices[0]?.message?.content?.trim() ?? "";
+    const answer = await answerQuestion(question, context);
     const citations = Array.from(answer.matchAll(/\[p\.(\d+)\]/g)).map(
       (match) => Number(match[1])
     );

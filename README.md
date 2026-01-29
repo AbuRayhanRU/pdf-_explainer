@@ -31,6 +31,16 @@ A production-ready MVP for uploading PDFs, extracting text (OCR fallback), gener
 3. Copy the frontend value into `frontend/.env`:
 	- `VITE_API_URL=http://localhost:4000`
 
+### Local model (Ollama)
+
+To run without OpenAI credits:
+
+- Set `AI_PROVIDER=ollama`
+- Ensure `OLLAMA_BASE_URL` points to your Ollama host (default: `http://localhost:11434`)
+- Set `OLLAMA_MODEL=llama3`
+
+If using Docker Compose, the Ollama service will pull the model automatically.
+
 ## Run Locally (Dev)
 
 ### Backend

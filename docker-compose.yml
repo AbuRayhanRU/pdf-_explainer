@@ -7,13 +7,18 @@ services:
     ports:
       - "4000:4000"
     environment:
+      AI_PROVIDER: ${AI_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
       JWT_SECRET: ${JWT_SECRET:-dev-secret}
       SQLITE_PATH: /app/data/app.db
     volumes:
       - backend-data:/app/data
       - backend-uploads:/app/uploads
+    depends_on:
+      - ollama
   frontend:
     build:
       context: ./frontend
@@ -23,7 +28,15 @@ services:
       - "5173:80"
     depends_on:
       - backend
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    command: ["bash", "-lc", "ollama serve & sleep 2 && ollama pull ${OLLAMA_MODEL:-llama3} && wait"]
 
 volumes:
   backend-data:
   backend-uploads:
+  ollama-data:
