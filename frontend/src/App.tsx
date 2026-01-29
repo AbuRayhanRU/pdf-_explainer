@@ -1,5 +1,5 @@
 import { type DragEvent, useEffect, useRef, useState } from "react";
-import { getHealth, uploadPdf } from "./services/api";
+import { extractText, getHealth, uploadPdf } from "./services/api";
 
 const features = [
   {
@@ -28,6 +28,13 @@ function App() {
     originalName: string;
     size: number;
   } | null>(null);
+  const [extractionState, setExtractionState] = useState<
+    "idle" | "extracting" | "success" | "error"
+  >("idle");
+  const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [extractionMethod, setExtractionMethod] = useState<
+    "pdf-parse" | "ocr" | null
+  >(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -51,6 +58,9 @@ function App() {
   const handleFileUpload = async (file: File) => {
     setUploadState("uploading");
     setUploadError(null);
+    setExtractedText(null);
+    setExtractionMethod(null);
+    setExtractionState("idle");
     try {
       const result = await uploadPdf(file);
       setUploadedFile({
@@ -59,11 +69,18 @@ function App() {
         size: result.size,
       });
       setUploadState("success");
+      setExtractionState("extracting");
+
+      const extracted = await extractText(result.id);
+      setExtractedText(extracted.text);
+      setExtractionMethod(extracted.method);
+      setExtractionState("success");
     } catch (error) {
       setUploadState("error");
       setUploadError(
         error instanceof Error ? error.message : "Upload failed"
       );
+      setExtractionState("error");
     }
   };
 
@@ -168,6 +185,22 @@ function App() {
                 Uploaded {uploadedFile.originalName} ({Math.round(uploadedFile.size / 1024)}
                 {" "}
                 KB)
+              </div>
+            ) : null}
+            {extractionState === "extracting" ? (
+              <p className="mt-3 text-sm text-indigo-300">
+                Extracting text...
+              </p>
+            ) : null}
+            {extractionState === "success" && extractedText ? (
+              <div className="mt-4 rounded-xl border border-slate-800 bg-slate-900/70 p-4 text-left text-sm text-slate-200">
+                <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                  <span>Extraction preview</span>
+                  <span>{extractionMethod === "ocr" ? "OCR" : "PDF"}</span>
+                </div>
+                <p className="max-h-48 overflow-hidden whitespace-pre-line">
+                  {extractedText || "No text extracted yet."}
+                </p>
               </div>
             ) : null}
           </div>

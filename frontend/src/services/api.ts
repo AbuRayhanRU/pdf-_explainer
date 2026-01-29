@@ -66,4 +66,13 @@ export async function uploadPdf(file: File): Promise<{
   };
 }
 
+export async function extractText(id: string): Promise<{
+  text: string;
+  method: "pdf-parse" | "ocr";
+}> {
+  return postJson<{ text: string; method: "pdf-parse" | "ocr" }>("/extract", {
+    id,
+  });
+}
+
 export type { ApiResponse };
