@@ -12,6 +12,7 @@
     "express": "^4.19.2",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
+    "openai": "^6.17.0",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0"
   },

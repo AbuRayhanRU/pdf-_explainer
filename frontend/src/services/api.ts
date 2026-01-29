@@ -75,4 +75,14 @@ export async function extractText(id: string): Promise<{
   });
 }
 
+export async function summarizeDocument(id: string): Promise<{
+  summary: string;
+  method: "pdf-parse" | "ocr";
+}> {
+  return postJson<{ summary: string; method: "pdf-parse" | "ocr" }>(
+    "/summarize",
+    { id }
+  );
+}
+
 export type { ApiResponse };

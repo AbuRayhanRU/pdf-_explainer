@@ -1,5 +1,5 @@
 import { type DragEvent, useEffect, useRef, useState } from "react";
-import { extractText, getHealth, uploadPdf } from "./services/api";
+import { extractText, getHealth, summarizeDocument, uploadPdf } from "./services/api";
 
 const features = [
   {
@@ -35,6 +35,11 @@ function App() {
   const [extractionMethod, setExtractionMethod] = useState<
     "pdf-parse" | "ocr" | null
   >(null);
+  const [summaryState, setSummaryState] = useState<
+    "idle" | "summarizing" | "success" | "error"
+  >("idle");
+  const [summaryText, setSummaryText] = useState<string | null>(null);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -61,6 +66,9 @@ function App() {
     setExtractedText(null);
     setExtractionMethod(null);
     setExtractionState("idle");
+    setSummaryState("idle");
+    setSummaryText(null);
+    setSummaryError(null);
     try {
       const result = await uploadPdf(file);
       setUploadedFile({
@@ -81,6 +89,24 @@ function App() {
         error instanceof Error ? error.message : "Upload failed"
       );
       setExtractionState("error");
+    }
+  };
+
+  const handleSummarize = async () => {
+    if (!uploadedFile) {
+      return;
+    }
+    setSummaryState("summarizing");
+    setSummaryError(null);
+    try {
+      const result = await summarizeDocument(uploadedFile.id);
+      setSummaryText(result.summary);
+      setSummaryState("success");
+    } catch (error) {
+      setSummaryState("error");
+      setSummaryError(
+        error instanceof Error ? error.message : "Summarization failed"
+      );
     }
   };
 
@@ -204,6 +230,41 @@ function App() {
               </div>
             ) : null}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Summary</h2>
+              <p className="mt-2 text-slate-300">
+                Generate an executive summary once a PDF is uploaded.
+              </p>
+            </div>
+            <button
+              className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+              type="button"
+              onClick={handleSummarize}
+              disabled={!uploadedFile || summaryState === "summarizing"}
+            >
+              {summaryState === "summarizing" ? "Summarizing..." : "Generate summary"}
+            </button>
+          </div>
+          {summaryState === "error" && summaryError ? (
+            <p className="mt-4 text-sm text-rose-400">{summaryError}</p>
+          ) : null}
+          {summaryState === "success" && summaryText ? (
+            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-200">
+              <p className="whitespace-pre-line">{summaryText}</p>
+            </div>
+          ) : uploadedFile ? (
+            <p className="mt-4 text-sm text-slate-400">
+              Click "Generate summary" to create a concise overview.
+            </p>
+          ) : (
+            <p className="mt-4 text-sm text-slate-400">
+              Upload a PDF to enable summarization.
+            </p>
+          )}
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">

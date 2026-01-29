@@ -6,6 +6,7 @@ import multer, { type FileFilterCallback } from "multer";
 import morgan from "morgan";
 import { PDFParse } from "pdf-parse";
 import Tesseract from "tesseract.js";
+import OpenAI from "openai";
 
 const app = express();
 
@@ -37,6 +38,7 @@ const upload = multer({
 });
 
 const MIN_TEXT_LENGTH = 80;
+const MAX_SUMMARY_CHARS = 20000;
 
 const extractPdfText = async (filePath: string) => {
   const fileBuffer = await fs.promises.readFile(filePath);
@@ -51,6 +53,14 @@ const extractPdfText = async (filePath: string) => {
 
   const ocrResult = await Tesseract.recognize(fileBuffer, "eng");
   return { text: ocrResult.data.text.trim(), method: "ocr" } as const;
+};
+
+const getOpenAIClient = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  return new OpenAI({ apiKey });
 };
 
 app.use(morgan("combined"));
@@ -96,6 +106,48 @@ app.post("/extract", async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
+app.post("/summarize", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.body as { id?: string };
+    if (!id) {
+      res.status(400).json({ error: "File id is required" });
+      return;
+    }
+
+    const filePath = path.join(uploadDir, id);
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const result = await extractPdfText(filePath);
+    const promptText = result.text.slice(0, MAX_SUMMARY_CHARS);
+    const client = getOpenAIClient();
+    const completion = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a helpful assistant that summarizes documents for busy professionals.",
+        },
+        {
+          role: "user",
+          content:
+            "Summarize the document in 5-8 bullet points. Focus on key facts, decisions, and action items.\n\n" +
+            promptText,
+        },
+      ],
+    });
+
+    const summary = completion.choices[0]?.message?.content?.trim() ?? "";
+    res.status(200).json({ summary, method: result.method });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((req: Request, res: Response) => {
   res.status(404).json({ error: "Not Found", path: req.path });
 });
@@ -103,6 +155,11 @@ app.use((req: Request, res: Response) => {
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   if (err.message === "Only PDF files are allowed") {
     res.status(400).json({ error: err.message });
+    return;
+  }
+
+  if (err.message === "OPENAI_API_KEY is not set") {
+    res.status(503).json({ error: "OpenAI API key is not configured" });
     return;
   }
 
