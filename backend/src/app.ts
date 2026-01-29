@@ -7,6 +7,8 @@ import morgan from "morgan";
 import { PDFParse } from "pdf-parse";
 import Tesseract from "tesseract.js";
 import OpenAI from "openai";
+import { authenticate, comparePassword, createToken, hashPassword } from "./auth.js";
+import { getDb } from "./db.js";
 
 const app = express();
 
@@ -78,7 +80,81 @@ app.get("/health", (_req: Request, res: Response) => {
   res.status(200).json({ status: "ok" });
 });
 
-app.post("/upload", upload.single("file"), (req: Request, res: Response) => {
+app.post("/auth/register", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, password } = req.body as { email?: string; password?: string };
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required" });
+      return;
+    }
+
+    const isValidEmail = /.+@.+\..+/.test(email);
+    if (!isValidEmail || password.length < 8) {
+      res.status(400).json({ error: "Invalid email or password" });
+      return;
+    }
+
+    const db = await getDb();
+    const existing = await db.get<{ id: string }>(
+      "SELECT id FROM users WHERE email = ?",
+      email
+    );
+    if (existing) {
+      res.status(409).json({ error: "User already exists" });
+      return;
+    }
+
+    const userId = randomUUID();
+    const passwordHash = await hashPassword(password);
+    const createdAt = new Date().toISOString();
+    await db.run(
+      "INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)",
+      userId,
+      email,
+      passwordHash,
+      createdAt
+    );
+
+    const token = createToken({ userId, email });
+    res.status(201).json({ token, user: { id: userId, email } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/auth/login", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, password } = req.body as { email?: string; password?: string };
+    if (!email || !password) {
+      res.status(400).json({ error: "Email and password are required" });
+      return;
+    }
+
+    const db = await getDb();
+    const user = await db.get<{ id: string; email: string; password_hash: string }>(
+      "SELECT id, email, password_hash FROM users WHERE email = ?",
+      email
+    );
+
+    if (!user) {
+      res.status(401).json({ error: "Invalid credentials" });
+      return;
+    }
+
+    const isValid = await comparePassword(password, user.password_hash);
+    if (!isValid) {
+      res.status(401).json({ error: "Invalid credentials" });
+      return;
+    }
+
+    const token = createToken({ userId: user.id, email: user.email });
+    res.status(200).json({ token, user: { id: user.id, email: user.email } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/upload", authenticate, upload.single("file"), (req: Request, res: Response) => {
   if (!req.file) {
     res.status(400).json({ error: "File is required" });
     return;
@@ -93,7 +169,7 @@ app.post("/upload", upload.single("file"), (req: Request, res: Response) => {
   });
 });
 
-app.post("/extract", async (req: Request, res: Response, next: NextFunction) => {
+app.post("/extract", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.body as { id?: string };
     if (!id) {
@@ -114,7 +190,7 @@ app.post("/extract", async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
-app.post("/summarize", async (req: Request, res: Response, next: NextFunction) => {
+app.post("/summarize", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.body as { id?: string };
     if (!id) {
@@ -156,7 +232,7 @@ app.post("/summarize", async (req: Request, res: Response, next: NextFunction) =
   }
 });
 
-app.post("/ask", async (req: Request, res: Response, next: NextFunction) => {
+app.post("/ask", authenticate, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id, question } = req.body as { id?: string; question?: string };
     if (!id || !question) {

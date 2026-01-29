@@ -3,9 +3,12 @@ import {
   askQuestion,
   extractText,
   getHealth,
+  loginUser,
+  registerUser,
   summarizeDocument,
   uploadPdf,
 } from "./services/api";
+import { clearAuthToken, getAuthToken, setAuthToken } from "./services/auth";
 
 const features = [
   {
@@ -52,6 +55,12 @@ function App() {
   const [messages, setMessages] = useState<
     Array<{ id: string; role: "user" | "assistant"; content: string; citations?: number[] }>
   >([]);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authToken, setAuthTokenState] = useState<string | null>(getAuthToken());
+  const [authUser, setAuthUser] = useState<{ id: string; email: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -126,6 +135,34 @@ function App() {
     }
   };
 
+  const handleAuthSubmit = async () => {
+    if (!authEmail || !authPassword) {
+      setAuthError("Email and password are required");
+      return;
+    }
+    setAuthError(null);
+    try {
+      const result =
+        authMode === "register"
+          ? await registerUser(authEmail, authPassword)
+          : await loginUser(authEmail, authPassword);
+      setAuthToken(result.token);
+      setAuthTokenState(result.token);
+      setAuthUser(result.user);
+      setAuthPassword("");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Auth failed");
+    }
+  };
+
+  const handleLogout = () => {
+    clearAuthToken();
+    setAuthTokenState(null);
+    setAuthUser(null);
+    setMessages([]);
+    setQuestionInput("");
+  };
+
   const handleAsk = async () => {
     if (!uploadedFile || !questionInput.trim()) {
       return;
@@ -185,8 +222,19 @@ function App() {
               Understand any document, instantly.
             </h1>
           </div>
-          <div className="rounded-full border border-slate-700 px-4 py-2 text-xs text-slate-300">
-            API status: <span className="font-semibold text-white">{apiStatus}</span>
+          <div className="flex items-center gap-3">
+            <div className="rounded-full border border-slate-700 px-4 py-2 text-xs text-slate-300">
+              API status: <span className="font-semibold text-white">{apiStatus}</span>
+            </div>
+            {authToken ? (
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-full border border-slate-700 px-4 py-2 text-xs font-semibold text-slate-200 hover:border-rose-400 hover:text-white"
+              >
+                Sign out
+              </button>
+            ) : null}
           </div>
         </div>
       </header>
@@ -212,6 +260,80 @@ function App() {
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
+          <h2 className="text-xl font-semibold text-white">Authentication</h2>
+          <p className="mt-2 text-slate-300">
+            Sign in to upload PDFs and access AI features.
+          </p>
+          {authToken ? (
+            <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-200">
+              Signed in as {authUser?.email ?? "authenticated user"}.
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4">
+                <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-400">
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("login")}
+                    className={`rounded-full px-3 py-1 ${
+                      authMode === "login"
+                        ? "bg-indigo-500/20 text-indigo-100"
+                        : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAuthMode("register")}
+                    className={`rounded-full px-3 py-1 ${
+                      authMode === "register"
+                        ? "bg-indigo-500/20 text-indigo-100"
+                        : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    Register
+                  </button>
+                </div>
+                <div className="mt-4 space-y-3">
+                  <input
+                    value={authEmail}
+                    onChange={(event) => setAuthEmail(event.target.value)}
+                    placeholder="Email"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  />
+                  <input
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    placeholder="Password (min 8 chars)"
+                    type="password"
+                    className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAuthSubmit}
+                    className="w-full rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400"
+                  >
+                    {authMode === "register" ? "Create account" : "Sign in"}
+                  </button>
+                  {authError ? (
+                    <p className="text-sm text-rose-400">{authError}</p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
+                <p className="font-semibold text-white">Why sign in?</p>
+                <ul className="mt-3 space-y-2">
+                  <li>Secure your uploads and generated insights.</li>
+                  <li>Enable summarization and question answering.</li>
+                  <li>Track your session state during analysis.</li>
+                </ul>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8">
@@ -248,10 +370,15 @@ function App() {
               className="mt-4 rounded-lg border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-indigo-400 hover:text-white"
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadState === "uploading"}
+              disabled={uploadState === "uploading" || !authToken}
             >
               Browse files
             </button>
+            {!authToken ? (
+              <p className="mt-3 text-sm text-amber-300">
+                Sign in to enable uploads.
+              </p>
+            ) : null}
             {uploadState === "error" && uploadError ? (
               <p className="mt-3 text-sm text-rose-400">{uploadError}</p>
             ) : null}
@@ -293,7 +420,7 @@ function App() {
               className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
               type="button"
               onClick={handleSummarize}
-              disabled={!uploadedFile || summaryState === "summarizing"}
+              disabled={!uploadedFile || summaryState === "summarizing" || !authToken}
             >
               {summaryState === "summarizing" ? "Summarizing..." : "Generate summary"}
             </button>
@@ -360,7 +487,7 @@ function App() {
               <button
                 type="button"
                 onClick={handleAsk}
-                disabled={!uploadedFile || askState === "asking"}
+                disabled={!uploadedFile || askState === "asking" || !authToken}
                 className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-500/40 transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:bg-slate-700"
               >
                 {askState === "asking" ? "Asking..." : "Ask"}

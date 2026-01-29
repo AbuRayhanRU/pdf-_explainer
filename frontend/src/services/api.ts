@@ -1,3 +1,5 @@
+import { getAuthToken } from "./auth";
+
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
 type ApiResponse<T> = {
@@ -5,9 +7,11 @@ type ApiResponse<T> = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -30,6 +34,26 @@ export async function getHealth(): Promise<{ status: string }> {
   return request<{ status: string }>("/health");
 }
 
+export async function registerUser(email: string, password: string): Promise<{
+  token: string;
+  user: { id: string; email: string };
+}> {
+  return postJson<{ token: string; user: { id: string; email: string } }>(
+    "/auth/register",
+    { email, password }
+  );
+}
+
+export async function loginUser(email: string, password: string): Promise<{
+  token: string;
+  user: { id: string; email: string };
+}> {
+  return postJson<{ token: string; user: { id: string; email: string } }>(
+    "/auth/login",
+    { email, password }
+  );
+}
+
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
   return request<T>(path, {
     method: "POST",
@@ -46,10 +70,12 @@ export async function uploadPdf(file: File): Promise<{
 }> {
   const formData = new FormData();
   formData.append("file", file);
+  const token = getAuthToken();
 
   const response = await fetch(`${API_BASE_URL}/upload`, {
     method: "POST",
     body: formData,
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
 
   if (!response.ok) {
