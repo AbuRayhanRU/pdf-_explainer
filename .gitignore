@@ -16,6 +16,9 @@ uploads/
 # SQLite
 data/
 
+# Local test config
+backend/jest.config.ts
+
 # Build outputs
 /dist/
 /build/

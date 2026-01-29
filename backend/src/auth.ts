@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { sign, verify, type Secret, type SignOptions } from "jsonwebtoken";
+import jwt, { type Secret, type SignOptions } from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
 
 const JWT_SECRET: Secret = process.env.JWT_SECRET ?? "dev-secret";
@@ -17,7 +17,7 @@ export const comparePassword = async (password: string, hash: string) =>
   bcrypt.compare(password, hash);
 
 export const createToken = (payload: JwtPayload) =>
-  sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
 export const authenticate = (
   req: Request,
@@ -32,7 +32,7 @@ export const authenticate = (
 
   const token = authHeader.replace("Bearer ", "");
   try {
-    const decoded = verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
     (req as Request & { user?: JwtPayload }).user = decoded;
     next();
   } catch (error) {
