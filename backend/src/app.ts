@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import multer, { type FileFilterCallback } from "multer";
 import morgan from "morgan";
@@ -73,6 +74,12 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey });
 };
 
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+    credentials: true,
+  })
+);
 app.use(morgan("combined"));
 app.use(express.json({ limit: "2mb" }));
 
